@@ -1,0 +1,14 @@
+Analisis del problema:
+Implementar un juego de carrera de caballos
+
+preparar_carrera -> todo listo antes de la carrera
+caballo -> entidad
+carrea -> es la funcion en si esta corriendo todo
+presentar_resultado -> es resultado de la carrera orden
+
+preparar_carrera -> carrera -> presentar_resultado
+
+validacion de:
+carrera -> 1,2,3,4
+vueltas en una pista -> 30,40,50,60
+carrera puede tener caballos (2 a 7)
