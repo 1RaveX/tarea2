@@ -31,7 +31,6 @@ class Caballo {
         char symbol;
         int vueltas_actuales;
         int metros_totales;
-
 };
 
 #endif

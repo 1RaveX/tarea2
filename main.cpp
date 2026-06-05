@@ -1,45 +1,42 @@
-#include<iostream>
-#include <vector>
-#include <string>
+#include <iostream>
 #include <stdio.h>
 #include <ncurses.h>
 #include <pthread.h>
 #include <unistd.h>
 #include "caballo.h"
+#include "carrera.h"
 #include "common.h"
 
-#define NUM_HILOS 5
+#define NUM_HILOS 7
 #define NUM_CABALLOS 7
 
-
+pthread_mutex_t mutex_caballos = PTHREAD_MUTEX_INITIALIZER;
 void* comportamiento_caballo(void* arg) {
     ThreadData* data = (ThreadData*)arg;
-
     Caballo* caballo = data->caballo;
     Carrera* carrera = data->carrera;
-
-    while (caballo->getVueltasActuales() < carrera->num_vueltas ) {
-        usleep(200000);
-
+    while (caballo->getVueltasActuales() < carrera->getNumVueltas()) {
+        usleep(100000);
         int movimiento = randomMoveX();
+        pthread_mutex_lock(&mutex_caballos);
 
-        caballo->setPosition(
-            caballo->getPosition() + movimiento
-        );
+        caballo->setPosition(caballo->getPosition() + movimiento);
+        caballo->setMetrosTotales(caballo->getMetrosTotales() + movimiento);
 
-        caballo->setMetrosTotales(
-            caballo->getMetrosTotales() + movimiento
-        );
+        if (caballo->getPosition() >= carrera->getDistanciaPista()) {
+            caballo->setVueltasActuales(caballo->getVueltasActuales() + 1);
+    
+            if(caballo->getVueltasActuales() >= carrera->getNumVueltas()) {
+                
+                caballo->setPosition(carrera->getDistanciaPista()-1);
+                carrera->registrar_ranking(caballo->getId());
 
-        if (caballo->getPosition() >= carrera->distancia_pista) {
-            caballo->setPosition(0);
-
-            caballo->setVueltasActuales(
-                caballo->getVueltasActuales() + 1
-            );
+            } else {
+                caballo->setPosition(0);
+            }
         }
+        pthread_mutex_unlock(&mutex_caballos);
     }
-
     pthread_exit(NULL);
 }
 
@@ -48,10 +45,10 @@ void dibujar_pista(int cantidad_caballos,Carrera carrera) {
     mvprintw(0,0,"===== HIPODROMO =====");
 
     for (int i = 0; i < cantidad_caballos; i++){
-        Caballo* caballo = (carrera.caballos + i);
+        Caballo* caballo = (carrera.getCaballos() + i);
         mvprintw(i + 2,0,"Caballo %d: ",caballo->getId());
-
-        for (int j = 0;j < carrera.distancia_pista;j++) {
+        
+        for (int j = 0;j < carrera.getDistanciaPista();j++) {
             if (j == caballo->getPosition()) {
                 printw("C");
             }
@@ -59,52 +56,30 @@ void dibujar_pista(int cantidad_caballos,Carrera carrera) {
                 printw("-");
             }
         }
-
         printw(
             " | Vueltas: %d/%d | Metros: %d",
             caballo->getVueltasActuales(),
-            carrera.num_vueltas,
+            carrera.getNumVueltas(),
             caballo->getMetrosTotales()
         );
     }
-
     refresh();
 }
 
-
-// preparar_carrera
-void preparar_carrera() {
-    int num_vueltas, num_caballos, num_d;
-
-    std::cout << "Digite el numero de caballos: ";
-    std::cin >> num_caballos;
-
-    if (num_caballos < 2 || num_caballos > 7) {
-        std::cout << "Cantidad invalida\n";
-        return;
+void mostrar_resultado_ranking(int *ranking_caballos, int num_caballos) {
+    clear();
+    mvprintw(1, 1, "===== RANKING DE CABALLOS =====");
+    for (int i = 0; i < num_caballos; i++) {
+        if (ranking_caballos[i] != 0) {
+            mvprintw(i + 3, 1, "%d. Caballo %d", i + 1, (*ranking_caballos + i));
+        }
     }
+    mvprintw(num_caballos + 5, 1, "Presione una tecla para continuar...");
+    refresh();
+    getch();
+}
 
-    std::cout << "Digite el numero de vueltas: ";
-    std::cin >> num_vueltas;
-
-    std::cout << "Digite la distancia de pista: ";
-    std::cin >> num_d;
-
-    Caballo caballos[NUM_CABALLOS];
-
-    for (int i = 0; i < num_caballos; i++)
-    {
-        caballos[i].setId(i + 1);
-        caballos[i].setPosition(0);
-        caballos[i].setVueltasActuales(0);
-        caballos[i].setMetrosTotales(0);
-    }
-
-    Carrera carrera = {
-        num_vueltas,
-        num_d,
-        caballos
-    };
+void iniciar_carrera(Carrera &carrera,Caballo caballos[],int num_caballos) {
     pthread_t threads[NUM_CABALLOS];
     ThreadData data[NUM_CABALLOS];
 
@@ -112,10 +87,6 @@ void preparar_carrera() {
         data[i].caballo = &caballos[i];
         data[i].carrera = &carrera;
     }
-
-    initscr();
-    noecho();
-    curs_set(FALSE);
 
     createThread(
         threads,
@@ -127,102 +98,151 @@ void preparar_carrera() {
     bool carrera_finalizada = false;
 
     while (!carrera_finalizada) {
-        dibujar_pista(
-            num_caballos,
-            carrera
-        );
-
+        clear();
+        dibujar_pista(num_caballos, carrera);
+        refresh();
         usleep(100000);
-
         carrera_finalizada = true;
-
-        for (int i = 0; i < num_caballos; i++)
-        {
-            if (
-                caballos[i].getVueltasActuales() <
-                carrera.num_vueltas
-            )
-            {
+        for (int i = 0; i < num_caballos; i++) {
+            if (caballos[i].getVueltasActuales() < carrera.getNumVueltas()) {
                 carrera_finalizada = false;
                 break;
             }
         }
     }
 
-    runThread(
-        threads,
-        num_caballos
-    );
-
-    getch();
-    endwin();
-
-}
-
-// paresentar resultado
-void presentar_resultado() {
-
-}
-
-
-
-void renderizado_carrera() {
-    // tamaño maximo width
-    initscr();
+    runThread(threads, num_caballos);
+    clear();
+    dibujar_pista(num_caballos, carrera);
     refresh();
-    int WIDTH_2 = COLS/8;
-    int caballos_tam = 5;
-
-    mvprintw(0,WIDTH_2, "CARRERA");
-    for(int i=1;i<=caballos_tam;++i) {
-        mvprintw(i, 0, "CABALLO: %s, VUELTA %d - %d metros: ", "Caballo 1", 3, 300);    
-    }
-    mvprintw(8, 0, "Totales: %d VUELTAS  - %d metros: ", 10, 1000);
-    int acc = 8;
-    for(int i=0;i<7;++i) {
-        int row = i+acc;
-        mvprintw(row, 0, "CARRIL: %d | %c | -- | N", i+1, 'A');    
-    }
-    mvprintw(8+acc, WIDTH_2, "DISTANCIA");
     
+    mvprintw(num_caballos + 5,1,"Carrera finalizada. Presione una tecla para continuar...");
+    mostrar_resultado_ranking(carrera.getRankingCaballos(), num_caballos);
+    refresh();
     getch();
-    endwin();
 }
+
+
+
+// preparar_carrera
+void preparar_carrera() {
+    int num_vueltas;
+    int num_caballos;
+    int num_d;
+    char formato[] = "%d";
+
+    clear();
+
+    echo();
+    curs_set(TRUE);
+
+    do {
+        clear();
+        mvprintw(1, 1, "Digite el numero de caballos (2-7): ");
+        scanw(formato, &num_caballos);
+
+        if (num_caballos < 2 || num_caballos > 7) {
+            mvprintw(2, 1, "Cantidad invalida.");
+            mvprintw(3, 1, "Presione una tecla para reintentar...");
+            refresh();
+            getch();
+        }
+    } while (num_caballos < 2 || num_caballos > 7);        
+
+    do {
+        clear();
+        mvprintw(1, 1, "Digite el numero de vueltas (1-4): ");
+        scanw(formato, &num_vueltas);
+
+        if (num_vueltas < 1 || num_vueltas > 4) {
+            mvprintw(2, 1, "Cantidad invalida.");
+            mvprintw(3, 1, "Presione una tecla para reintentar...");
+            refresh();
+            getch();
+        }
+    } while (num_vueltas < 1 || num_vueltas > 4);
+    
+    do {
+        clear();
+        mvprintw(1, 1, "Digite la distancia de pista: ");
+        scanw(formato, &num_d);
+        if (num_d != 30 && num_d != 40 && num_d != 50 && num_d != 60) {
+            mvprintw(2, 1, "Cantidad invalida.");
+            mvprintw(3, 1, "Presione una tecla para reintentar...");
+            refresh();
+            getch();
+        }
+    } while (num_d != 30 && num_d != 40 && num_d != 50 && num_d != 60);
+
+
+    noecho();
+    curs_set(FALSE);
+    Caballo caballos[NUM_CABALLOS];
+
+    for (int i = 0; i < num_caballos; i++) {
+        caballos[i].setId(i + 1);
+        caballos[i].setPosition(0);
+        caballos[i].setVueltasActuales(0);
+        caballos[i].setMetrosTotales(0);
+    }
+
+    Carrera carrera(num_vueltas, num_d, caballos);
+    iniciar_carrera(carrera, caballos, num_caballos);
+}
+
 
 
 
 void menu() {
     int op;
+    char formato[] = "%d";
+
+
     do {
-        std::cout << "JUEGO DE CARRERA DE CABALLOS" << std::endl;
-        std::cout << "1. Para inciar el juego." << std::endl;
-        std::cout << "2. salir. " << std::endl;
-        std::cout << "Opcion: "; std::cin>> op;
+        clear();
+        mvprintw(1, 1, "JUEGO DE CARRERA DE CABALLOS");
+        mvprintw(2, 1, "1. Para iniciar el juego.");
+        mvprintw(3, 1, "2. Salir.");
+        mvprintw(5, 1, "Opcion: ");
+
+        echo();
+        scanw(formato, &op);
+        noecho();
 
         switch (op) {
-        case 1:
-            preparar_carrera();
-            printf("\033[H\033[2J");
-            fflush(stdout);
-            break;
-        case 2:
-            std::cout << "Saliendo del programa" << std::endl;
-            break;
-        default:
-            std::cout << "Opcion no disponible" << std::endl;
-            break;
-        }
-    } while (op != 2);
+            case 1:
+                preparar_carrera();
+                clear();
+                refresh();
+                break;
 
+            case 2:
+                clear();
+                mvprintw(1, 1, "Saliendo del programa");
+                refresh();
+                break;
+
+            default:
+                mvprintw(7, 1, "Opcion no disponible");
+                mvprintw(8, 1, "Presione una tecla para continuar...");
+                refresh();
+                getch();
+                break;
+        }
+
+    } while (op != 2);
 }
 
-
 int main() {
-    printf("\033[H\033[2J");
-    fflush(stdout);
+    initscr();
+    cbreak();
+    noecho();
+    keypad(stdscr, TRUE);
+    curs_set(FALSE);
 
-    std::cout << "Iniciando" << std::endl;
     menu();
+
+    endwin();
 
     return 0;
 }
