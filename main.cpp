@@ -18,13 +18,11 @@
 #define COLOR_GANADOR     5
 
 
-// Macros para centrar el contenido vertical y horizontalmente
 #define CENTER_Y (LINES / 2)
 #define CENTER_X (COLS / 2)
 
 
 
-// centrar todos los textos en el centro de la pantalla
 pthread_mutex_t mutex_caballos = PTHREAD_MUTEX_INITIALIZER;
 void* comportamiento_caballo(void* arg) {
     ThreadData* data = (ThreadData*)arg;
